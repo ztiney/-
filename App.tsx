@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { format, startOfWeek, addWeeks, subWeeks, endOfWeek } from 'date-fns';
 import { 
-  User, TaskTemplate, ScheduleItem, THEMES, 
+  User, TaskTemplate, ScheduleItem, THEMES, DAYS
 } from './types';
 import { Calendar } from './components/Calendar';
 import { Statistics } from './components/Statistics';
@@ -10,7 +10,8 @@ import {
   Plus, ChevronLeft, ChevronRight, 
   Settings, CalendarDays,
   Edit3, Check, X, Trash2, Clock, Palette, Smile,
-  BarChart2, Upload, Share2, Download, ZoomIn, Move
+  BarChart2, Upload, Share2, Download, ZoomIn, Move,
+  Briefcase, Repeat
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
@@ -44,6 +45,22 @@ const INITIAL_TEMPLATES: TaskTemplate[] = [
 ];
 
 type ViewType = 'calendar' | 'stats';
+
+// Helper to format duration friendlier (e.g. 75 min -> 1小时15分)
+export const formatDurationFriendly = (minutes: number) => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h > 0) {
+      return `${h}小时${m > 0 ? `${m}分` : ''}`;
+  }
+  return `${m}分`;
+};
+
+// Helper to parse time string "HH:MM" to minutes
+const parseTimeToMinutes = (timeStr: string) => {
+    const [h, m] = timeStr.split(':').map(Number);
+    return h * 60 + m;
+};
 
 export default function App() {
   const [appName, setAppName] = useState('Mochi 日程本');
@@ -79,6 +96,15 @@ export default function App() {
   const [newStickerDuration, setNewStickerDuration] = useState(60);
   const [newStickerColor, setNewStickerColor] = useState(STICKER_COLORS[0]);
   const [newStickerIcon, setNewStickerIcon] = useState(EMOJIS[0]);
+
+  // Work/School Modal State
+  const [isWorkModalOpen, setIsWorkModalOpen] = useState(false);
+  const [workConfig, setWorkConfig] = useState({
+      title: '上学',
+      startTime: '08:00',
+      endTime: '17:00',
+      days: [0, 1, 2, 3, 4], // Mon-Fri
+  });
 
   // Share Modal State
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -216,6 +242,57 @@ export default function App() {
   const handleDeleteItem = (id: string) => {
     setItems(prev => prev.filter(item => item.id !== id));
   };
+  
+  // --- Work Schedule Logic ---
+  const handleGenerateWorkSchedule = () => {
+      const { title, startTime, endTime, days } = workConfig;
+      
+      const startMin = parseTimeToMinutes(startTime);
+      const endMin = parseTimeToMinutes(endTime);
+      let duration = endMin - startMin;
+      
+      if (duration <= 0) {
+          alert("结束时间必须晚于开始时间");
+          return;
+      }
+      
+      // Remove existing Work items for this week/user (identified by 'sys-work' templateId)
+      const cleanItems = items.filter(i => 
+        !(i.weekId === currentWeekId && i.userId === currentUser.id && i.templateId === 'sys-work')
+      );
+      
+      const newItems: ScheduleItem[] = [];
+      days.forEach(dayIndex => {
+          newItems.push({
+            id: crypto.randomUUID(),
+            userId: currentUser.id,
+            templateId: 'sys-work',
+            title: title || '固定日程',
+            startTime: startMin,
+            duration: duration,
+            dayIndex: dayIndex,
+            color: '#e2e8f0', // Neutral Slate
+            completion: 0,
+            weekId: currentWeekId,
+            isRecurring: true,
+            type: 'block',
+            excludeFromStats: true
+          });
+      });
+      
+      setItems([...cleanItems, ...newItems]);
+      setIsWorkModalOpen(false);
+  };
+
+  const toggleWorkDay = (dayIndex: number) => {
+      setWorkConfig(prev => {
+          if (prev.days.includes(dayIndex)) {
+              return { ...prev, days: prev.days.filter(d => d !== dayIndex) };
+          } else {
+              return { ...prev, days: [...prev.days, dayIndex].sort() };
+          }
+      });
+  };
 
   const handleAddUser = () => {
     const names = ['新朋友', '小可爱', '小怪兽'];
@@ -243,7 +320,6 @@ export default function App() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Basic size check (e.g. 10MB limit before processing)
       if (file.size > 10 * 1024 * 1024) {
           alert("图片太大了，请选择小于10MB的图片");
           return;
@@ -252,13 +328,11 @@ export default function App() {
       const reader = new FileReader();
       reader.onloadend = () => {
         setRawImageSrc(reader.result as string);
-        // Reset crop state
         setCropScale(1);
         setCropPos({ x: 0, y: 0 });
       };
       reader.readAsDataURL(file);
     }
-    // Clear input
     e.target.value = '';
   };
 
@@ -285,26 +359,17 @@ export default function App() {
       if (!imageRef.current) return;
 
       const canvas = document.createElement('canvas');
-      const size = 200; // Output size (Square)
+      const size = 200; 
       canvas.width = size;
       canvas.height = size;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Draw background
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, size, size);
-
-      // We want to capture what is visible in the 200px circular window
-      // The visual window is 200x200.
-      // The image is transformed by translate(cropPos) and scale(cropScale)
-      // center of window is (100, 100).
       
-      // Calculate drawing params
       const img = imageRef.current;
       
-      // We need to map the visual transformation to the canvas context
-      // Center the origin
       ctx.translate(size/2, size/2);
       ctx.translate(cropPos.x, cropPos.y);
       ctx.scale(cropScale, cropScale);
@@ -312,10 +377,9 @@ export default function App() {
       
       ctx.drawImage(img, 0, 0);
 
-      // Convert to Base64 (JPEG 0.8 quality for smaller size)
       const optimizedImage = canvas.toDataURL('image/jpeg', 0.8);
       setEditAvatar(optimizedImage);
-      setRawImageSrc(null); // Close crop modal
+      setRawImageSrc(null); 
   };
 
   const saveUserSettings = () => {
@@ -327,7 +391,6 @@ export default function App() {
         theme: editTheme
     };
     
-    // Safety check for localStorage quota
     try {
         localStorage.setItem('test-quota', JSON.stringify(updatedUser));
         localStorage.removeItem('test-quota');
@@ -409,12 +472,11 @@ export default function App() {
     setIsGeneratingImage(true);
     
     try {
-        // Wait a bit for images/fonts to settle
         await new Promise(resolve => setTimeout(resolve, 500));
         
         const canvas = await html2canvas(exportRef.current, {
-            scale: 2, // Retina support
-            useCORS: true, // For cross-origin images
+            scale: 2, 
+            useCORS: true, 
             backgroundColor: null,
             logging: false
         });
@@ -544,42 +606,52 @@ export default function App() {
         <div className="flex-1 flex flex-col min-h-0 border-t border-slate-100 pt-4 relative group/store">
           <div className="flex justify-between items-center mb-3 px-1">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">贴纸库</h3>
-            <button 
-              onClick={handleOpenCreateSticker}
-              className={`w-5 h-5 flex items-center justify-center rounded-full bg-white text-slate-400 hover:${themeColors.text} hover:bg-white shadow-sm transition-all`}
-              title="创建新贴纸"
-            >
-              <Plus size={12} strokeWidth={3} />
-            </button>
+            <div className="flex gap-1">
+                <button 
+                    onClick={() => setIsWorkModalOpen(true)}
+                    className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all"
+                    title="添加固定日程 (上班/上学)"
+                >
+                    <Briefcase size={10} strokeWidth={2.5} />
+                </button>
+                <button 
+                onClick={handleOpenCreateSticker}
+                className={`w-5 h-5 flex items-center justify-center rounded-full bg-white text-slate-400 hover:${themeColors.text} hover:bg-white shadow-sm transition-all`}
+                title="创建新贴纸"
+                >
+                    <Plus size={12} strokeWidth={3} />
+                </button>
+            </div>
           </div>
           
           <div className="flex-1 overflow-y-auto pr-1 no-scrollbar pb-16">
-            <div className="grid grid-cols-2 gap-2">
+            {/* COMPACT STICKER GRID (3 Columns) */}
+            <div className="grid grid-cols-3 gap-1.5">
               {templates.map(template => (
                 <div
                   key={template.id}
                   draggable
                   onDragStart={(e) => handleDragStartSticker(e, template)}
                   onDragEnd={handleDragEndSticker}
-                  className="bg-white p-2 rounded-lg shadow-sm border border-slate-100 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative flex flex-col items-center gap-1 hover:ring-2 ring-slate-100"
+                  className="bg-white p-1.5 rounded-lg shadow-sm border border-slate-100 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative flex flex-col items-center gap-1 hover:ring-2 ring-slate-100"
                 >
                   <div 
-                    className="w-8 h-8 rounded-md flex items-center justify-center text-sm shadow-inner"
+                    className="w-7 h-7 rounded-md flex items-center justify-center text-xs shadow-inner"
                     style={{ backgroundColor: template.color }}
                   >
                     <span className="drop-shadow-sm text-white">{template.icon}</span>
                   </div>
                   
                   <div className="text-center w-full">
-                    <p className="font-bold text-slate-700 text-xs truncate">{template.name}</p>
-                    <p className="text-[10px] text-slate-400">{template.defaultDuration}分</p>
+                    <p className="font-bold text-slate-700 text-[10px] truncate leading-tight">{template.name}</p>
+                    <p className="text-[9px] text-slate-400 scale-90">{formatDurationFriendly(template.defaultDuration)}</p>
                   </div>
                 </div>
               ))}
               
               {templates.length === 0 && (
-                 <div className="col-span-2 text-center p-4 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
-                   点击上方 + 号<br/>添加贴纸
+                 <div className="col-span-3 text-center p-4 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
+                   点击 + 号<br/>添加贴纸
                  </div>
               )}
             </div>
@@ -676,6 +748,110 @@ export default function App() {
         )}
 
         {/* --- MODALS --- */}
+
+        {/* Work/School Schedule Modal */}
+        {isWorkModalOpen && (
+            <div className="absolute inset-0 bg-black/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                          <Briefcase size={20} className={themeColors.text} />
+                          固定日程 (上班/上学)
+                        </h3>
+                        <button 
+                          onClick={() => setIsWorkModalOpen(false)}
+                          className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200"
+                        >
+                          <X size={16} />
+                        </button>
+                    </div>
+
+                    <div className="space-y-5">
+                        {/* Title Input */}
+                        <div>
+                           <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                             名称
+                           </label>
+                           <input 
+                              type="text" 
+                              value={workConfig.title}
+                              onChange={(e) => setWorkConfig({...workConfig, title: e.target.value})}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 font-bold focus:outline-none focus:ring-2 focus:ring-slate-200"
+                           />
+                        </div>
+
+                        {/* Time Inputs */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                               <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                 开始时间
+                               </label>
+                               <input 
+                                  type="time" 
+                                  value={workConfig.startTime}
+                                  onChange={(e) => setWorkConfig({...workConfig, startTime: e.target.value})}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-slate-700 font-bold text-center focus:outline-none focus:ring-2 focus:ring-slate-200"
+                               />
+                            </div>
+                            <div>
+                               <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                 结束时间
+                               </label>
+                               <input 
+                                  type="time" 
+                                  value={workConfig.endTime}
+                                  onChange={(e) => setWorkConfig({...workConfig, endTime: e.target.value})}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-slate-700 font-bold text-center focus:outline-none focus:ring-2 focus:ring-slate-200"
+                               />
+                            </div>
+                        </div>
+
+                        {/* Days Selection */}
+                        <div>
+                           <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                             重复周期
+                           </label>
+                           <div className="flex justify-between bg-slate-50 p-2 rounded-xl border border-slate-100">
+                               {DAYS.map((dayName, index) => {
+                                   const isSelected = workConfig.days.includes(index);
+                                   return (
+                                       <button
+                                           key={index}
+                                           onClick={() => toggleWorkDay(index)}
+                                           className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                                              ${isSelected 
+                                                ? 'bg-slate-700 text-white shadow-md scale-105' 
+                                                : 'text-slate-400 hover:bg-slate-200'}
+                                           `}
+                                       >
+                                           {dayName.replace('周', '')}
+                                       </button>
+                                   );
+                               })}
+                           </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-6 flex items-start gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <div className="mt-0.5 text-slate-400">
+                             <BarChart2 size={14} />
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                            此日程将以灰色区块显示，且<span className="font-bold text-slate-700">不会</span>计入右侧的习惯统计数据中。
+                        </p>
+                    </div>
+
+                    <button 
+                        onClick={handleGenerateWorkSchedule}
+                        className={`w-full mt-6 py-3 rounded-xl font-bold text-white shadow-lg transition-transform hover:scale-[1.02] active:scale-95 
+                            bg-slate-700 hover:bg-slate-800
+                        `}
+                    >
+                        生成日程
+                    </button>
+                </div>
+            </div>
+        )}
 
         {/* CROPPER MODAL (Only shows when rawImageSrc is set) */}
         {rawImageSrc && (

@@ -4,6 +4,7 @@ import { ScheduleItem, DAYS, HOURS_START, HOURS_END, PIXELS_PER_HOUR, TaskTempla
 import { GridItem } from './GridItem';
 import { SleepMarker } from './SleepMarker';
 import { format, startOfWeek } from 'date-fns';
+import { Clock } from 'lucide-react';
 
 interface CalendarProps {
   currentDate: Date;
@@ -128,7 +129,11 @@ export const Calendar: React.FC<CalendarProps> = ({
         
         {/* Time Sidebar */}
         <div className={`w-16 flex-shrink-0 border-r border-rose-100 bg-white/40 ${isExport ? '' : 'sticky left-0 z-[60]'}`}>
-          <div className="h-10 border-b border-rose-100"></div> {/* Header spacer */}
+          {/* Header spacer - Now styled to match Day Headers */}
+          <div className={`h-10 border-b border-rose-100 bg-rose-50/90 flex items-center justify-center ${isExport ? '' : 'sticky top-0 z-[70] backdrop-blur-md'}`}>
+             <Clock size={16} className="text-rose-300 opacity-80" />
+          </div> 
+          
           {hours.map((hour) => {
             const displayHour = hour >= 24 ? hour - 24 : hour;
             return (
@@ -159,8 +164,8 @@ export const Calendar: React.FC<CalendarProps> = ({
 
             return (
                 <div key={day} className="flex-1 min-w-[80px] border-r border-rose-100 last:border-r-0 flex flex-col">
-                {/* Day Header - Higher Z-Index for Priority */}
-                <div className={`h-10 flex items-center justify-center border-b border-rose-100 bg-rose-50/90 ${isExport ? '' : 'sticky top-0 z-50 backdrop-blur-md'}`}>
+                {/* Day Header - CHANGED Z-INDEX to 70 to overlap stickers (which are z-60 on hover) */}
+                <div className={`h-10 flex items-center justify-center border-b border-rose-100 bg-rose-50/90 ${isExport ? '' : 'sticky top-0 z-[70] backdrop-blur-md'}`}>
                     <span className="text-sm font-bold text-rose-800 uppercase tracking-wide">{day}</span>
                 </div>
 

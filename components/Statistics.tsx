@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { ScheduleItem, User } from '../types';
 import { PieChart, Clock, CheckCircle2, Trophy, BarChart3, Calendar, List } from 'lucide-react';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
+import { formatDurationFriendly } from '../App';
 
 interface StatisticsProps {
   items: ScheduleItem[];
@@ -17,9 +18,10 @@ export const Statistics: React.FC<StatisticsProps> = ({ items, currentUser, them
   
   const currentWeekId = format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd');
 
-  // Filter items based on scope AND exclude markers (type !== 'marker')
+  // Filter items based on scope AND exclude markers (type !== 'marker') AND exclude work blocks
   const filteredItems = useMemo(() => {
-    let baseItems = items.filter(i => i.type !== 'marker');
+    let baseItems = items.filter(i => i.type !== 'marker' && !i.excludeFromStats);
+    
     // If in export mode (hideControls), enforce 'week' scope usually, or stick to current scope
     if (scope === 'all') return baseItems;
     return baseItems.filter(item => item.weekId === currentWeekId);
@@ -58,12 +60,6 @@ export const Statistics: React.FC<StatisticsProps> = ({ items, currentUser, them
       sortedCategories
     };
   }, [filteredItems]);
-
-  const formatDuration = (minutes: number) => {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return h > 0 ? `${h}小时 ${m}分` : `${m}分钟`;
-  };
 
   return (
     <div className={`flex-1 ${hideControls ? '' : 'overflow-y-auto no-scrollbar p-4 lg:p-8'} animate-in fade-in slide-in-from-bottom-4 duration-500`}>
@@ -111,7 +107,7 @@ export const Statistics: React.FC<StatisticsProps> = ({ items, currentUser, them
                    <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">
                        {scope === 'week' ? '计划时长' : '累计时长'}
                    </p>
-                   <p className="text-2xl font-bold text-slate-700">{formatDuration(stats.totalMinutes)}</p>
+                   <p className="text-2xl font-bold text-slate-700">{formatDurationFriendly(stats.totalMinutes)}</p>
                 </div>
              </div>
 
@@ -161,7 +157,7 @@ export const Statistics: React.FC<StatisticsProps> = ({ items, currentUser, them
                                      <span className="w-2 h-2 rounded-full bg-slate-300 group-hover:bg-rose-400 transition-colors"></span>
                                      {title}
                                   </span>
-                                  <span className="text-slate-400">{percentage}% ({formatDuration(data.minutes)})</span>
+                                  <span className="text-slate-400">{percentage}% ({formatDurationFriendly(data.minutes)})</span>
                                </div>
                                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                                   <div 

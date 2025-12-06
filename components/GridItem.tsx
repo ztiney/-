@@ -2,7 +2,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ScheduleItem, PIXELS_PER_HOUR, SNAP_MINUTES, HOURS_START } from '../types';
-import { Lock, Unlock, Trash2, Clock, Copy } from 'lucide-react';
+import { Lock, Unlock, Trash2, Clock, Copy, Briefcase } from 'lucide-react';
+import { formatDurationFriendly } from '../App';
 
 interface GridItemProps {
   item: ScheduleItem;
@@ -35,6 +36,7 @@ export const GridItem: React.FC<GridItemProps> = ({ item, onUpdate, onDelete, on
   const height = (item.duration / 60) * PIXELS_PER_HOUR;
   const completion = item.completion ?? 0;
   const isShort = height < 50;
+  const isFixed = item.excludeFromStats; // Check if it is a fixed schedule (Work/School)
 
   useEffect(() => {
     const handleGlobalMouseUp = () => {
@@ -227,10 +229,18 @@ export const GridItem: React.FC<GridItemProps> = ({ item, onUpdate, onDelete, on
         style={isDragging ? draggingStyle : normalStyle}
         onMouseDown={(e) => handleMouseDown(e, 'move')}
     >
-        <div 
-            className="absolute bottom-0 left-0 right-0 bg-black/10 pointer-events-none transition-all rounded-b-lg" 
-            style={{ height: `${completion}%`, opacity: 0.15 }}
-        />
+        {/* Only show background progress bar if NOT a fixed schedule item */}
+        {!isFixed && (
+            <div 
+                className="absolute bottom-0 left-0 right-0 bg-black/10 pointer-events-none transition-all rounded-b-lg" 
+                style={{ height: `${completion}%`, opacity: 0.15 }}
+            />
+        )}
+
+        {/* Fixed Item Pattern Overlay */}
+        {isFixed && (
+            <div className="absolute inset-0 opacity-10 pointer-events-none bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNCIgaGVpZ2h0PSI0IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik0tMSwxIGwyLC0yIE0wLDQgbDQsLTQgTTMsNSBsMiwtMiIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9zdmc+')]"></div>
+        )}
         
         {/* Copy Indicator Overlay */}
         {isDragging && (
@@ -239,11 +249,45 @@ export const GridItem: React.FC<GridItemProps> = ({ item, onUpdate, onDelete, on
             </div>
         )}
         
-        {/* --- SHORT ITEM CONTENT --- */}
-        {isShort && (
-            <div className="w-full h-full flex items-center justify-center px-1 relative">
-                <span className="truncate font-bold drop-shadow-md text-[10px] leading-tight text-center">
+        {/* --- FIXED ITEM SPECIAL LAYOUT --- */}
+        {isFixed && (
+            <div className="relative w-full h-full flex flex-col items-center justify-center p-2 text-slate-600">
+                {/* Large Background Icon */}
+                <div className="mb-1 opacity-40">
+                    <Briefcase size={24} />
+                </div>
+                {/* Centered Large Title */}
+                <span className="font-bold text-sm text-center leading-tight drop-shadow-sm opacity-90">
                     {item.title}
+                </span>
+                
+                {/* Hover Controls for Fixed Item (Hidden by default) */}
+                <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/50 backdrop-blur-sm p-0.5 rounded-lg shadow-sm">
+                   <button 
+                        onClick={toggleLock}
+                        onMouseDown={e => e.stopPropagation()}
+                        className="p-1 rounded text-slate-500 hover:text-slate-700 hover:bg-white/80"
+                        title={item.isRecurring ? "解锁" : "锁定"}
+                    >
+                        {item.isRecurring ? <Lock size={12} /> : <Unlock size={12}/>}
+                    </button>
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+                        onMouseDown={e => e.stopPropagation()}
+                        className="p-1 rounded text-slate-500 hover:text-red-500 hover:bg-white/80"
+                        title="删除日程"
+                    >
+                        <Trash2 size={12} />
+                    </button>
+                </div>
+            </div>
+        )}
+
+        {/* --- NORMAL SHORT ITEM CONTENT --- */}
+        {isShort && !isFixed && (
+            <div className="w-full h-full flex items-center justify-center px-1 relative">
+                <span className="truncate font-bold drop-shadow-md text-[10px] leading-tight text-center flex items-center gap-1 justify-center">
+                    <span className="truncate">{item.title}</span>
                 </span>
                 
                 {/* POPOVER */}
@@ -268,7 +312,7 @@ export const GridItem: React.FC<GridItemProps> = ({ item, onUpdate, onDelete, on
                             <div className="flex flex-col">
                                 <span className="text-xs font-bold text-slate-800">{formatTime(item.startTime)} - {formatTime(item.startTime + item.duration)}</span>
                                 <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1">
-                                <Clock size={10} /> {item.duration}分钟
+                                <Clock size={10} /> {formatDurationFriendly(item.duration)}
                                 </span>
                             </div>
                             <div className="flex gap-1">
@@ -288,7 +332,7 @@ export const GridItem: React.FC<GridItemProps> = ({ item, onUpdate, onDelete, on
                                 </button>
                             </div>
                         </div>
-
+                        
                         <div className="flex flex-col gap-1">
                             <div className="flex justify-between text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                                 <span>完成进度</span>
@@ -320,10 +364,12 @@ export const GridItem: React.FC<GridItemProps> = ({ item, onUpdate, onDelete, on
         )}
 
         {/* --- NORMAL ITEM CONTENT --- */}
-        {!isShort && (
+        {!isShort && !isFixed && (
             <div className="relative h-full flex flex-col p-1.5 overflow-hidden">
                 <div className="flex justify-between items-start gap-1">
-                    <span className="truncate font-bold drop-shadow-md leading-tight">{item.title}</span>
+                    <span className="truncate font-bold drop-shadow-md leading-tight flex items-center gap-1">
+                        <span className="truncate">{item.title}</span>
+                    </span>
                     <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
                             onClick={toggleLock}
@@ -365,7 +411,7 @@ export const GridItem: React.FC<GridItemProps> = ({ item, onUpdate, onDelete, on
                 <div className="flex justify-between items-end text-[10px] font-mono opacity-90 leading-none">
                     <div className="flex flex-col">
                         <span>{formatTime(item.startTime)}</span>
-                        <span className="opacity-80 scale-90 origin-left font-bold">{item.duration}分</span>
+                        <span className="opacity-80 scale-90 origin-left font-bold">{formatDurationFriendly(item.duration)}</span>
                     </div>
                     <span className="font-bold">{completion}%</span>
                 </div>

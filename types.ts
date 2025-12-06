@@ -28,6 +28,7 @@ export interface ScheduleItem {
   isRecurring: boolean; // If true, copies to next week automatically
   type?: 'block' | 'marker'; // 'block' is standard box, 'marker' is the new line type
   markerType?: 'wake' | 'sleep'; // Subtype for markers
+  excludeFromStats?: boolean; // New: exclude from statistics (e.g. work/school)
 }
 
 export const THEMES = [

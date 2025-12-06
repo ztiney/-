@@ -13,14 +13,12 @@ interface SleepMarkerProps {
 export const SleepMarker: React.FC<SleepMarkerProps> = ({ item, prevDayItem, onUpdate, baseHour = HOURS_START }) => {
   const isWake = item.markerType === 'wake';
   
-  // Use a ref to track the last value we sent to the parent.
   const lastUpdateValue = useRef(item.startTime);
   
   // Calculate Position
   const normalizedStartTime = item.startTime;
   const top = ((normalizedStartTime / 60) - baseHour) * PIXELS_PER_HOUR;
 
-  // Drag Logic
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
@@ -76,39 +74,64 @@ export const SleepMarker: React.FC<SleepMarkerProps> = ({ item, prevDayItem, onU
      const h = Math.floor(durationMin / 60);
      const m = durationMin % 60;
      if (h > 0 && h < 16) { 
-         sleepDurationText = `(睡眠: ${h}小时${m > 0 ? m+'分' : ''})`;
+         sleepDurationText = `(睡眠: ${h}小时${m > 0 ? `${m}分` : ''})`;
      }
   }
 
-  const colorClass = isWake ? 'text-orange-500 border-orange-400 bg-orange-50' : 'text-indigo-500 border-indigo-400 bg-indigo-50';
+  const colorClass = isWake 
+    ? 'text-orange-600 border-orange-200 bg-orange-50 hover:bg-orange-100' 
+    : 'text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100';
+  const dashedBorderClass = isWake ? 'border-orange-300' : 'border-indigo-300';
+  
+  // Reverted to Linear Icons
   const Icon = isWake ? Sun : Moon;
 
   return (
     <div 
-        className={`absolute left-0 right-0 h-0 border-t-2 border-dashed flex items-center group cursor-row-resize z-40 transition-all hover:border-solid hover:z-50 ${colorClass.split(' ')[1]}`}
+        className="absolute left-0 right-0 h-0 flex items-center justify-center z-40 group"
         style={{ top: `${top}px` }}
         onMouseDown={handleMouseDown}
     >
-        <div className={`absolute left-0 -translate-y-1/2 px-2 py-1.5 rounded-lg shadow-sm flex flex-col items-start border text-[10px] font-bold select-none transition-transform hover:scale-105 ${colorClass}`}>
-            <div className="flex items-center gap-1.5">
-                <Icon size={12} strokeWidth={2.5} />
-                <span>{formatTime(item.startTime)}</span>
+        {/* Dashed Line Background - Fainter now */}
+        <div className={`absolute w-full border-t-2 border-dashed opacity-20 pointer-events-none ${dashedBorderClass}`} />
+
+        {/* The Pill Content - Adaptive Width */}
+        <div className={`
+            relative
+            w-[calc(100%-4px)] mx-auto
+            -translate-y-1/2 
+            px-2 py-1.5
+            rounded-xl 
+            shadow-sm border
+            flex flex-col gap-0.5
+            text-[10px] font-bold 
+            cursor-row-resize
+            transition-all duration-200
+            ${colorClass}
+        `}>
+            {/* Top Row: Icon + Time + Lock */}
+            <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-1.5">
+                    <Icon size={14} strokeWidth={2.5} />
+                    <span className="tabular-nums text-sm font-bold leading-none mt-0.5">{formatTime(item.startTime)}</span>
+                </div>
                 <button 
                     onMouseDown={(e) => e.stopPropagation()} 
                     onClick={toggleLock}
-                    className="ml-1 p-0.5 hover:bg-black/5 rounded"
+                    className="p-0.5 hover:bg-black/5 rounded-md transition-colors opacity-60 hover:opacity-100 flex-shrink-0"
+                    title={item.isRecurring ? "解锁" : "锁定"}
                 >
-                   {item.isRecurring ? <Lock size={10} /> : <Unlock size={10} />}
+                    {item.isRecurring ? <Lock size={12} /> : <Unlock size={12} />}
                 </button>
             </div>
+
+            {/* Bottom Row: Duration (if exists) */}
             {sleepDurationText && (
-                <span className="text-orange-600/80 font-medium whitespace-nowrap opacity-90 mt-0.5 text-[9px]">
+                <div className="text-[10px] opacity-90 font-medium truncate pl-0.5">
                     {sleepDurationText}
-                </span>
+                </div>
             )}
         </div>
-
-        <div className={`w-full ${isWake ? 'bg-orange-200/20' : 'bg-indigo-200/20'} h-4 -translate-y-1/2 absolute left-0 -z-10 opacity-0 group-hover:opacity-100 transition-opacity`} />
     </div>
   );
 };
