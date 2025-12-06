@@ -10,7 +10,7 @@ import {
   Plus, ChevronLeft, ChevronRight, 
   Settings, CalendarDays,
   Edit3, Check, X, Trash2, Clock, Palette, Smile,
-  BarChart2, Upload, Share2, Download
+  BarChart2, Upload, Share2, Download, ZoomIn, Move
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
@@ -64,6 +64,14 @@ export default function App() {
   const [editName, setEditName] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
   const [editTheme, setEditTheme] = useState('');
+
+  // Image Cropper State
+  const [rawImageSrc, setRawImageSrc] = useState<string | null>(null);
+  const [cropScale, setCropScale] = useState(1);
+  const [cropPos, setCropPos] = useState({ x: 0, y: 0 });
+  const [isDraggingCrop, setIsDraggingCrop] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const imageRef = useRef<HTMLImageElement>(null);
 
   // New Sticker Modal State
   const [isStickerModalOpen, setIsStickerModalOpen] = useState(false);
@@ -235,12 +243,79 @@ export default function App() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Basic size check (e.g. 10MB limit before processing)
+      if (file.size > 10 * 1024 * 1024) {
+          alert("图片太大了，请选择小于10MB的图片");
+          return;
+      }
+      
       const reader = new FileReader();
       reader.onloadend = () => {
-        setEditAvatar(reader.result as string);
+        setRawImageSrc(reader.result as string);
+        // Reset crop state
+        setCropScale(1);
+        setCropPos({ x: 0, y: 0 });
       };
       reader.readAsDataURL(file);
     }
+    // Clear input
+    e.target.value = '';
+  };
+
+  const handleCropMouseDown = (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsDraggingCrop(true);
+      setDragStart({ x: e.clientX - cropPos.x, y: e.clientY - cropPos.y });
+  };
+
+  const handleCropMouseMove = (e: React.MouseEvent) => {
+      if (!isDraggingCrop) return;
+      e.preventDefault();
+      setCropPos({
+          x: e.clientX - dragStart.x,
+          y: e.clientY - dragStart.y
+      });
+  };
+
+  const handleCropMouseUp = () => {
+      setIsDraggingCrop(false);
+  };
+
+  const handleSaveCroppedImage = () => {
+      if (!imageRef.current) return;
+
+      const canvas = document.createElement('canvas');
+      const size = 200; // Output size (Square)
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Draw background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, size, size);
+
+      // We want to capture what is visible in the 200px circular window
+      // The visual window is 200x200.
+      // The image is transformed by translate(cropPos) and scale(cropScale)
+      // center of window is (100, 100).
+      
+      // Calculate drawing params
+      const img = imageRef.current;
+      
+      // We need to map the visual transformation to the canvas context
+      // Center the origin
+      ctx.translate(size/2, size/2);
+      ctx.translate(cropPos.x, cropPos.y);
+      ctx.scale(cropScale, cropScale);
+      ctx.translate(-img.naturalWidth/2, -img.naturalHeight/2);
+      
+      ctx.drawImage(img, 0, 0);
+
+      // Convert to Base64 (JPEG 0.8 quality for smaller size)
+      const optimizedImage = canvas.toDataURL('image/jpeg', 0.8);
+      setEditAvatar(optimizedImage);
+      setRawImageSrc(null); // Close crop modal
   };
 
   const saveUserSettings = () => {
@@ -251,9 +326,18 @@ export default function App() {
         avatar: editAvatar,
         theme: editTheme
     };
-    setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
-    setCurrentUser(updatedUser);
-    setIsSettingsOpen(false);
+    
+    // Safety check for localStorage quota
+    try {
+        localStorage.setItem('test-quota', JSON.stringify(updatedUser));
+        localStorage.removeItem('test-quota');
+        
+        setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+        setCurrentUser(updatedUser);
+        setIsSettingsOpen(false);
+    } catch (e) {
+        alert("保存失败：数据量过大。请尝试使用更简单的头像或删除一些旧数据。");
+    }
   };
 
   const handleOpenCreateSticker = () => {
@@ -592,6 +676,74 @@ export default function App() {
         )}
 
         {/* --- MODALS --- */}
+
+        {/* CROPPER MODAL (Only shows when rawImageSrc is set) */}
+        {rawImageSrc && (
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+                    <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <Move size={20} /> 调整图片
+                    </h3>
+                    
+                    {/* Viewport Area */}
+                    <div className="relative w-full aspect-square bg-slate-100 rounded-2xl overflow-hidden mb-4 border-2 border-dashed border-slate-300 cursor-move touch-none"
+                         onMouseDown={handleCropMouseDown}
+                         onMouseMove={handleCropMouseMove}
+                         onMouseUp={handleCropMouseUp}
+                         onMouseLeave={handleCropMouseUp}
+                    >
+                        {/* The Image */}
+                        <img 
+                            ref={imageRef}
+                            src={rawImageSrc} 
+                            alt="Crop target"
+                            className="absolute max-w-none origin-center pointer-events-none select-none"
+                            style={{
+                                left: '50%',
+                                top: '50%',
+                                transform: `translate(-50%, -50%) translate(${cropPos.x}px, ${cropPos.y}px) scale(${cropScale})`,
+                            }}
+                            draggable={false}
+                        />
+                        
+                        {/* The Overlay (Hole) */}
+                        <div className="absolute inset-0 pointer-events-none shadow-[0_0_0_999px_rgba(255,255,255,0.7)] rounded-full m-8 border-2 border-white/50 z-10"></div>
+                        <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-30 text-slate-800 z-0">
+                             <Move size={48} />
+                        </div>
+                    </div>
+
+                    {/* Controls */}
+                    <div className="flex items-center gap-3 mb-6">
+                        <ZoomIn size={18} className="text-slate-400" />
+                        <input 
+                            type="range" 
+                            min="0.5" 
+                            max="3" 
+                            step="0.1" 
+                            value={cropScale}
+                            onChange={(e) => setCropScale(parseFloat(e.target.value))}
+                            className="flex-1 accent-rose-500 h-1 bg-slate-200 rounded-full appearance-none"
+                        />
+                    </div>
+
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => setRawImageSrc(null)}
+                            className="flex-1 py-3 rounded-xl font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 transition-colors"
+                        >
+                            取消
+                        </button>
+                        <button 
+                            onClick={handleSaveCroppedImage}
+                            className="flex-1 py-3 rounded-xl font-bold text-white bg-rose-500 hover:bg-rose-600 shadow-lg transition-transform hover:scale-[1.02] active:scale-95"
+                        >
+                            完成
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
         
         {/* Share Modal & Hidden Export View */}
         {isShareModalOpen && (
@@ -622,7 +774,7 @@ export default function App() {
                         
                         {/* Header */}
                         <div className="flex items-center gap-6 mb-10 relative z-10">
-                            <div className="w-24 h-24 rounded-3xl bg-white shadow-md flex items-center justify-center text-5xl border-4 border-white">
+                            <div className="w-24 h-24 rounded-3xl bg-white shadow-md flex items-center justify-center text-5xl border-4 border-white overflow-hidden">
                                 {renderAvatar(currentUser.avatar, 'text-5xl')}
                             </div>
                             <div>
